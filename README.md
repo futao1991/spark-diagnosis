@@ -13,8 +13,13 @@
 将该jar包上传至hdfs路径上，设为/user/hive/spark/spark-diagnosis-1.0-SNAPSHOT.jar
 
 提交spark作业时，添加以下配置:
+
 spark.extraListeners=org.apache.spark.diagnosis.listener.SparkAppListener
+
 spark.diagnosis.jvm.path=/user/hive/spark/executor_metrics
+
 spark.jars=hdfs://xxx/user/hive/spark/spark-diagnosis-1.0-SNAPSHOT.jar
+
 spark.executor.extraJavaOptions="-javaagent:spark-diagnosis-1.0-SNAPSHOT.jar=reporter=cn.fraudmetrix.spark.metrics.HdfsOutputReporter,metricInterval=5000,appIdPath=/user/hive/spark/executor_metrics"
+
 注: /user/hive/spark/executor_metrics为保存executor运行信息的目录
