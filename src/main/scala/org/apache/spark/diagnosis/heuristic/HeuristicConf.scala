@@ -36,4 +36,12 @@ object HeuristicConf {
 	  * stage中的task scheduler delay 阈值
 	  */
 	val STAGE_TASK_SCHEDULER_DELAY_GAP = 0.2
+
+	var LongTailTaskNotifyCount = 0
+
+	var DataSkewNotifyCount = 0
+
+	var GcOverHeadNotifyCount = 0
+
+	var PrometheusNotifyCount = 0
 }

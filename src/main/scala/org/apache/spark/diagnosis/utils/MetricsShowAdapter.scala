@@ -1,47 +1,56 @@
 package org.apache.spark.diagnosis.utils
 
 import java.sql.Timestamp
+import java.util
 
-import org.apache.spark.diagnosis.heuristic.{ResultDetail, ResultLevel}
-import org.apache.spark.SparkConf
+import org.apache.spark.diagnosis.data.AppInfo
 
 /**
   * @author futao
   * create at 2018/9/10
   */
 trait MetricsSinkAdapter {
-	
-	def showMetrics(resultDetail: ResultDetail)
+	def showMetrics(appInfo: AppInfo)
 }
-
 
 class StdOutMetricsShow extends MetricsSinkAdapter {
 	
-	def info(level:String, message: String): Unit ={
-		val time = new Timestamp(System.currentTimeMillis)
-		println(s"$time $level: $message")
-	}
-	
-	override def showMetrics(resultDetail: ResultDetail): Unit = {
-		resultDetail.level match {
-			case ResultLevel.INFO => info("INFO", resultDetail.message)
-			case ResultLevel.WARN => info("WARN", resultDetail.message)
-			case ResultLevel.ERROR => info("ERROR", resultDetail.message)
-		}
+    override def showMetrics(appInfo: AppInfo): Unit ={
+        val time = new Timestamp(System.currentTimeMillis)
+        println(s"$time ${appInfo.toConsoleInfo}")
 	}
 }
 
+class MetaServerMetrics(metaServerUrl: String) extends MetricsSinkAdapter {
+
+    override def showMetrics(appInfo: AppInfo): Unit = {
+        val url = s"http://$metaServerUrl/metaserver/eventserver/v1/send"
+        val map = new util.HashMap[String, AnyRef]()
+        map.put("channel", s"CHANNEL@SPARK@${appInfo.event}")
+        map.put("event", appInfo.toJSONInfo)
+        HttpClient.sendPost(url, map)
+    }
+}
+
 object MetricsSinkFactory {
-	
-	var metricsSink: MetricsSinkAdapter = _
-	
-	def initMetricsShowAdapter(conf: SparkConf): Unit = {
-		if (metricsSink == null) {
-			val adapter = conf.get("spark.metrics.adapter", "stdout")
-			adapter match {
-				case "stdout" => metricsSink = new StdOutMetricsShow
-				case _ => throw new RuntimeException("unsupported metrics adapter")
-			}
-		}
-	}
+
+    var metaServerUrl: String = _
+
+	var logMetricsSink: MetricsSinkAdapter = _
+
+    var metaServerMetricsSink: MetricsSinkAdapter = _
+
+    def getLogMetricsSink: MetricsSinkAdapter = {
+        if (null == logMetricsSink) {
+            logMetricsSink = new StdOutMetricsShow
+        }
+        logMetricsSink
+    }
+
+    def getMetaServerMetricsSink: MetricsSinkAdapter = {
+        if (null == metaServerMetricsSink) {
+            metaServerMetricsSink = new MetaServerMetrics(metaServerUrl)
+        }
+        metaServerMetricsSink
+    }
 }

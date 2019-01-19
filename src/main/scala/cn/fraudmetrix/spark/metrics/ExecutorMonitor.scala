@@ -6,7 +6,7 @@ import org.apache.commons.io.IOUtils
 import org.apache.commons.lang3.StringUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
-import org.apache.spark.diagnosis.heuristic.{MetricsInfo, ResultDetail, ResultLevel}
+import org.apache.spark.diagnosis.data.{AppEvent, ExecutorMonitorInfo}
 import org.apache.spark.diagnosis.utils.{HttpClient, MetricsSinkFactory, MetricsUtils}
 import org.apache.spark.internal.Logging
 
@@ -104,8 +104,10 @@ object ExecutorMonitor extends Logging {
 			
 			if (heapMemory * 1.0 / executorMemory > 0.9) {
 				if (executorNotifyCount(executorId) == 0) {
-					val message = s"executor_$executorId max memory is ${MetricsUtils.convertUnit(executorMemory)}, current heap memory is ${MetricsUtils.convertUnit(heapMemory)}"
-					MetricsSinkFactory.metricsSink.showMetrics(ResultDetail(ResultLevel.WARN, MetricsInfo.ExecutorInfo, message))
+					val message = s"WARN: executor_$executorId max memory is ${MetricsUtils.convertUnit(executorMemory)}, current heap memory is ${MetricsUtils.convertUnit(heapMemory)}"
+					MetricsSinkFactory.getLogMetricsSink.showMetrics(
+						ExecutorMonitorInfo("", "WARN", AppEvent.Event.EXECUTOR_INFO, message)
+					)
 				}
 				executorNotifyCount(executorId) += 1
 				if (executorNotifyCount(executorId) >= 10) {

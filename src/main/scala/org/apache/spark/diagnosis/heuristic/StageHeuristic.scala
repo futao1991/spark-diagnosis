@@ -9,7 +9,7 @@ import org.apache.spark.diagnosis.status.InternalStatusUtils
 import org.apache.spark.internal.Logging
 import org.apache.spark.status.api.v1
 import org.apache.spark.storage.RDDInfo
-import org.apache.spark.diagnosis.data.StageMetricsData
+import org.apache.spark.diagnosis.data.{AppEvent, StageDiagnosisInfo, StageMetricsData}
 import org.apache.spark.diagnosis.utils.{MetricsSinkFactory, MetricsUtils, PrometheusUtils}
 
 import scala.collection.mutable
@@ -179,12 +179,14 @@ object StageHeuristic extends Logging {
 		if (timeGap > 20000 && timeGapRatio > HeuristicConf.STAGE_TASK_DISTRIBUTION_GAP) {
 			if ((onlyCheckRunning && maxTimeTaskIsRunning) || !onlyCheckRunning) {
 				needToCheckPrometheus = true
-				val msg = s"longTail task occurred in stage $stageId ($stageName), max time: $maxTime ms, taskId: $maxTimeTaskId"
-				if (MetricsInfo.LongTailTaskNotifyCount == 0) {
-					MetricsSinkFactory.metricsSink.showMetrics(ResultDetail(ResultLevel.WARN, MetricsInfo.LongTailTask, msg))
+				val message = s"longTail task occurred in stage $stageId ($stageName), max time: $maxTime ms, taskId: $maxTimeTaskId"
+				if (HeuristicConf.LongTailTaskNotifyCount == 0) {
+					MetricsSinkFactory.getLogMetricsSink.showMetrics(
+                        StageDiagnosisInfo("", "WARN", AppEvent.Event.STAGE_DIAGNOSIS, message)
+                    )
 				}
-				MetricsInfo.LongTailTaskNotifyCount += 1
-				if (MetricsInfo.LongTailTaskNotifyCount >= 20) MetricsInfo.LongTailTaskNotifyCount = 0
+				HeuristicConf.LongTailTaskNotifyCount += 1
+				if (HeuristicConf.LongTailTaskNotifyCount >= 20) HeuristicConf.LongTailTaskNotifyCount = 0
 			}
 		}
 
@@ -211,12 +213,13 @@ object StageHeuristic extends Logging {
 				if (rddInfo.isDefined) {
 					message = s"$message, site: ${rddInfo.get.callSite}"
 				}
-				if (MetricsInfo.DataSkewNotifyCount == 0) {
+				if (HeuristicConf.DataSkewNotifyCount == 0) {
 					StageMetricsData.stageSkewFlag(stageId) = message
-					MetricsSinkFactory.metricsSink.showMetrics(ResultDetail(ResultLevel.WARN, MetricsInfo.DataSkew, message))
+					MetricsSinkFactory.getLogMetricsSink.showMetrics(
+						StageDiagnosisInfo("", "WARN", AppEvent.Event.STAGE_DIAGNOSIS, message))
 				}
-				MetricsInfo.DataSkewNotifyCount += 1
-				if (MetricsInfo.DataSkewNotifyCount >= 10) MetricsInfo.DataSkewNotifyCount = 0
+				HeuristicConf.DataSkewNotifyCount += 1
+				if (HeuristicConf.DataSkewNotifyCount >= 10) HeuristicConf.DataSkewNotifyCount = 0
 			}
 		}
 
@@ -243,11 +246,13 @@ object StageHeuristic extends Logging {
 				if (rddInfo.isDefined) {
 					message = s"$message, site: ${rddInfo.get.callSite}"
 				}
-				if (MetricsInfo.DataSkewNotifyCount == 0) {
-					MetricsSinkFactory.metricsSink.showMetrics(ResultDetail(ResultLevel.WARN, MetricsInfo.DataSkew, message))
+				if (HeuristicConf.DataSkewNotifyCount == 0) {
+					MetricsSinkFactory.getLogMetricsSink.showMetrics(
+                        StageDiagnosisInfo("", "WARN", AppEvent.Event.STAGE_DIAGNOSIS, message)
+                    )
 				}
-				MetricsInfo.DataSkewNotifyCount += 1
-				if (MetricsInfo.DataSkewNotifyCount >= 10) MetricsInfo.DataSkewNotifyCount = 0
+				HeuristicConf.DataSkewNotifyCount += 1
+				if (HeuristicConf.DataSkewNotifyCount >= 10) HeuristicConf.DataSkewNotifyCount = 0
 			}
 		}
 
@@ -267,12 +272,14 @@ object StageHeuristic extends Logging {
 				}
 
 				val message = s"input skew occurred in stage $stageId ($stageName), max input records: $maxInputRecord, taskId: $maxInputRecordTaskId"
-				if (MetricsInfo.DataSkewNotifyCount == 0) {
+				if (HeuristicConf.DataSkewNotifyCount == 0) {
 					StageMetricsData.stageSkewFlag(stageId) = message
-					MetricsSinkFactory.metricsSink.showMetrics(ResultDetail(ResultLevel.WARN, MetricsInfo.DataSkew, message))
+					MetricsSinkFactory.getLogMetricsSink.showMetrics(
+                        StageDiagnosisInfo("", "WARN", AppEvent.Event.STAGE_DIAGNOSIS, message)
+                    )
 				}
-				MetricsInfo.DataSkewNotifyCount += 1
-				if (MetricsInfo.DataSkewNotifyCount >= 10) MetricsInfo.DataSkewNotifyCount = 0
+				HeuristicConf.DataSkewNotifyCount += 1
+				if (HeuristicConf.DataSkewNotifyCount >= 10) HeuristicConf.DataSkewNotifyCount = 0
 			}
 		}
 
@@ -286,11 +293,13 @@ object StageHeuristic extends Logging {
 					needToCheckPrometheus = false
 				}
 
-				if (MetricsInfo.GcOverHeadNotifyCount == 0) {
-					MetricsSinkFactory.metricsSink.showMetrics(ResultDetail(ResultLevel.WARN, MetricsInfo.GcOverHead, message))
+				if (HeuristicConf.GcOverHeadNotifyCount == 0) {
+					MetricsSinkFactory.getLogMetricsSink.showMetrics(
+                        StageDiagnosisInfo("", "WARN", AppEvent.Event.STAGE_DIAGNOSIS, message)
+                    )
 				}
-				MetricsInfo.GcOverHeadNotifyCount += 1
-				if (MetricsInfo.GcOverHeadNotifyCount >= 10) MetricsInfo.GcOverHeadNotifyCount = 0
+				HeuristicConf.GcOverHeadNotifyCount += 1
+				if (HeuristicConf.GcOverHeadNotifyCount >= 10) HeuristicConf.GcOverHeadNotifyCount = 0
 			}
 		}
 
@@ -302,16 +311,18 @@ object StageHeuristic extends Logging {
 				val loadAverage = PrometheusUtils.getLoadAverageByHostName(prometheusUrl, maxTimeTaskHost)
 				val cpuUsage = PrometheusUtils.getCpuUsageByHostName(prometheusUrl, maxTimeTaskHost)
 				
-				if (MetricsInfo.PrometheusNotifyCount == 0) {
+				if (HeuristicConf.PrometheusNotifyCount == 0) {
 					val message =
-						s"""task $maxTimeTaskId running on $maxTimeTaskHost,  
+						s"""task $maxTimeTaskId running on $maxTimeTaskHost,
 						   | Load 1m: ${loadAverage._1}, Load 5m: ${loadAverage._2}, Load 15m: ${loadAverage._3}
 						   | CPU usage: $cpuUsage
 						 """.stripMargin
-					MetricsSinkFactory.metricsSink.showMetrics(ResultDetail(ResultLevel.INFO, MetricsInfo.NodeStatus, message))
+					MetricsSinkFactory.getLogMetricsSink.showMetrics(
+                        StageDiagnosisInfo("", "INFO", AppEvent.Event.STAGE_DIAGNOSIS, message)
+                    )
 				}
-				MetricsInfo.PrometheusNotifyCount += 1
-				if (MetricsInfo.PrometheusNotifyCount >= 30) MetricsInfo.PrometheusNotifyCount = 0
+				HeuristicConf.PrometheusNotifyCount += 1
+				if (HeuristicConf.PrometheusNotifyCount >= 30) HeuristicConf.PrometheusNotifyCount = 0
 			}
 		}
 	}
@@ -328,7 +339,9 @@ object StageHeuristic extends Logging {
 				val medianTime = distributions.executorRunTime(2)
 				val medianDelay = distributions.schedulerDelay(2)
 				val message = s"stage $stageId average task time: $medianTime ms, average delay $medianDelay ms"
-				MetricsSinkFactory.metricsSink.showMetrics(ResultDetail(ResultLevel.WARN, MetricsInfo.ScheduleDelay, message))
+				MetricsSinkFactory.getLogMetricsSink.showMetrics(
+                    StageDiagnosisInfo("", "WARN", AppEvent.Event.STAGE_DIAGNOSIS, message)
+                )
 			}
 		}
 	}
@@ -343,7 +356,9 @@ object StageHeuristic extends Logging {
 		if (parentShuffleWritten > 0) {
 			val taskNums = stageInfo.numTasks
 			val message = s"stage $stageId ($stageName) prepare to shuffle read ${MetricsUtils.convertUnit(parentShuffleWritten)}, total tasks: $taskNums"
-			MetricsSinkFactory.metricsSink.showMetrics(ResultDetail(ResultLevel.INFO, MetricsInfo.StageDataInfo, message))
+			MetricsSinkFactory.getLogMetricsSink.showMetrics(
+                StageDiagnosisInfo("", "INFO", AppEvent.Event.STAGE_DIAGNOSIS, message)
+            )
 		}
 	}
 

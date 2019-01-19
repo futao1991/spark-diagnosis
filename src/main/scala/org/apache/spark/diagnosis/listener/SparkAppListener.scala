@@ -6,7 +6,7 @@ import org.apache.hadoop.fs.permission.FsPermission
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.hadoop.yarn.client.api.YarnClient
 import org.apache.hadoop.yarn.util.ConverterUtils
-import org.apache.spark.diagnosis.data.StageMetricsData
+import org.apache.spark.diagnosis.data._
 import org.apache.spark.diagnosis.heuristic._
 import org.apache.spark.diagnosis.schedule.JobGroupScheduleFactory
 import org.apache.spark.diagnosis.status.InternalStatusUtils
@@ -48,8 +48,8 @@ class SparkAppListener extends SparkListener with Logging {
 		if (sparkContext == null || InternalStatusUtils.getAppStatusStore(sparkContext) == null) {
 			throw new RuntimeException("can not get appStatusStore of sparkContext")
 		}
-		MetricsSinkFactory.initMetricsShowAdapter(sparkContext.conf)
 		StageHeuristic.prometheusUrl = sparkContext.getConf.get("spark.diagnosis.prometheus.url", "")
+        MetricsSinkFactory.metaServerUrl = sparkContext.getConf.get("spark.diagnosis.metaServer.url", "")
 		JobGroupScheduleFactory.addMonitor(applicationStart.appId)
 		applicationStart.appId.foreach(appId = _)
 		startTime = System.currentTimeMillis()
@@ -71,10 +71,18 @@ class SparkAppListener extends SparkListener with Logging {
 		}
 		
 		val sparkConfig = MetricsUtils.getSparkConfig(sparkContext)
-		MetricsSinkFactory.metricsSink.showMetrics(ResultDetail(ResultLevel.INFO, MetricsInfo.ApplicationInfo, sparkConfig))
-		
 		yarnClient.init(sparkContext.hadoopConfiguration)
 		yarnClient.start()
+
+        val applicationReport = yarnClient.getApplicationReport(ConverterUtils.toApplicationId(appId))
+        val submitTime = applicationReport.getStartTime
+        val user = applicationReport.getUser
+        val queue = applicationReport.getQueue
+
+        val appStartEvent = AppStartEvent(appId, "INFO", AppEvent.Event.APP_START,
+            submitTime, startTime, user, queue, sparkConfig)
+        MetricsSinkFactory.getLogMetricsSink.showMetrics(appStartEvent)
+		MetricsSinkFactory.getMetaServerMetricsSink.showMetrics(appStartEvent)
 	}
 
 	override def onApplicationEnd(applicationEnd: SparkListenerApplicationEnd): Unit = {
@@ -84,15 +92,18 @@ class SparkAppListener extends SparkListener with Logging {
 			val memorySeconds = resourceUsageReport.getMemorySeconds
 			val vCoreSeconds = resourceUsageReport.getVcoreSeconds
 			val time = System.currentTimeMillis() - startTime
-			val message = s"$appId end, elapsed time: ${MetricsUtils.convertTimeUnit(time)}, memorySeconds: $memorySeconds, vCoreSeconds: $vCoreSeconds"
-			MetricsSinkFactory.metricsSink.showMetrics(ResultDetail(ResultLevel.INFO, MetricsInfo.ApplicationInfo, message))
-			
-			var seq = Seq[String]()
-			for (executorId <- ExecutorMonitor.executorToMemory.keySet) {
-				seq = seq :+ s"executorId_$executorId: ${ExecutorMonitor.executorToMemory(executorId)}"
-			}
-			val executorJvmInfo = s"""executor jvm info: ${seq.mkString("\n")}"""
-			MetricsSinkFactory.metricsSink.showMetrics(ResultDetail(ResultLevel.INFO, MetricsInfo.ExecutorInfo, executorJvmInfo))
+
+            val appEndEvent = AppEndEvent(appId, "INFO", AppEvent.Event.APP_END, time, memorySeconds, vCoreSeconds)
+            MetricsSinkFactory.getLogMetricsSink.showMetrics(appEndEvent)
+            MetricsSinkFactory.getMetaServerMetricsSink.showMetrics(appEndEvent)
+
+            for (executorId <- StageMetricsData.executorMap.keySet) {
+                val executorRemovedEvent = getExecutorEvent(executorId)
+                if (null != executorRemovedEvent) {
+                    MetricsSinkFactory.getLogMetricsSink.showMetrics(executorRemovedEvent)
+                    MetricsSinkFactory.getMetaServerMetricsSink.showMetrics(executorRemovedEvent)
+                }
+            }
 		}
 	}
 
@@ -121,15 +132,16 @@ class SparkAppListener extends SparkListener with Logging {
 		StageHeuristic.evaluateTaskMetricDistributions(stageId, stageCompleted.stageInfo.attemptId)
 		if (stageCompleted.stageInfo.failureReason.isEmpty) {
 			StageMetricsData.stageInfoList.get(stageId).foreach { stageInfo =>
-				val inputBytes = MetricsUtils.convertUnit(stageInfo.taskMetrics.inputMetrics.bytesRead)
-				val outputBytes = MetricsUtils.convertUnit(stageInfo.taskMetrics.outputMetrics.bytesWritten)
-				val shuffleReadBytes = MetricsUtils.convertUnit(stageInfo.taskMetrics.shuffleReadMetrics.totalBytesRead)
-				val shuffleWriteBytes = MetricsUtils.convertUnit(stageInfo.taskMetrics.shuffleWriteMetrics.bytesWritten)
+				val inputBytes = stageInfo.taskMetrics.inputMetrics.bytesRead
+				val outputBytes = stageInfo.taskMetrics.outputMetrics.bytesWritten
+				val shuffleReadBytes = stageInfo.taskMetrics.shuffleReadMetrics.totalBytesRead
+				val shuffleWriteBytes = stageInfo.taskMetrics.shuffleWriteMetrics.bytesWritten
 
-				val message =
-					s"""stage $stageId ($stageName) complete, total $taskNums task, time: ${MetricsUtils.convertTimeUnit(time)}
-					   |input: $inputBytes, output: $outputBytes, shuffleRead: $shuffleReadBytes, shuffleWrite: $shuffleWriteBytes""".stripMargin
-				MetricsSinkFactory.metricsSink.showMetrics(ResultDetail(ResultLevel.INFO, MetricsInfo.StageDataInfo, message))
+                val stageCompletedEvent = StageCompletedEvent(appId, "INFO", AppEvent.Event.STAGE_COMPLETED, stageId, time,
+                    taskNums, inputBytes, outputBytes, shuffleReadBytes, shuffleWriteBytes)
+
+                MetricsSinkFactory.getLogMetricsSink.showMetrics(stageCompletedEvent)
+                MetricsSinkFactory.getMetaServerMetricsSink.showMetrics(stageCompletedEvent)
 			}
 		}
 	}
@@ -141,7 +153,7 @@ class SparkAppListener extends SparkListener with Logging {
 			taskEnd.reason match {
 				case _: TaskFailedReason =>
 					StageMetricsData.taskFailedMap(taskId) = taskEnd
-					TaskHeuristic.evaluate(taskId)
+					TaskHeuristic.evaluate(appId, taskId)
 				case _ =>
 			}
 		}
@@ -151,12 +163,41 @@ class SparkAppListener extends SparkListener with Logging {
 		StageMetricsData.executorMap(executorAdded.executorId) = executorAdded.executorInfo.executorHost
 	}
 
+    private def getExecutorEvent(executorId: String): ExecutorRemovedEvent = {
+        val executor = InternalStatusUtils.getExecutor(executorId)
+        if (null != executor) {
+            val host = executor.hostPort
+            val startTime = executor.addTime.getTime
+            val elapseTime = System.currentTimeMillis() - startTime
+            val completedTasks = executor.completedTasks
+            val failedTasks = executor.failedTasks
+            val inputBytes = executor.totalInputBytes
+            val shuffleReadBytes = executor.totalShuffleRead
+
+            var maxMemory = 0L
+            var averageHeapMemory = 0L
+
+            if (ExecutorMonitor.executorToMemory.contains(executorId)) {
+                val executorMemory = ExecutorMonitor.executorToMemory(executorId)
+                maxMemory = executorMemory.maxMemory
+                averageHeapMemory = if (executorMemory.count >0) executorMemory.totalMemory / executorMemory.count
+                else executorMemory.totalMemory
+            }
+
+            return ExecutorRemovedEvent(appId, "INFO", AppEvent.Event.EXECUTOR_REMOVED, executorId, host, elapseTime,
+                completedTasks, failedTasks, inputBytes, shuffleReadBytes, averageHeapMemory, maxMemory)
+        }
+        null
+    }
+
 	override def onExecutorRemoved(executorRemoved: SparkListenerExecutorRemoved): Unit = {
 		val executorId = executorRemoved.executorId
 		StageMetricsData.executorMap.remove(executorId)
-		if (ExecutorMonitor.executorToMemory.contains(executorId)) {
-			val message = s"executor_$executorId jvm info: ${ExecutorMonitor.executorToMemory(executorId)}"
-			MetricsSinkFactory.metricsSink.showMetrics(ResultDetail(ResultLevel.INFO, MetricsInfo.ExecutorInfo, message))
-		}
+
+        val executorRemovedEvent = getExecutorEvent(executorId)
+        if (null != executorRemovedEvent) {
+            MetricsSinkFactory.getLogMetricsSink.showMetrics(executorRemovedEvent)
+            MetricsSinkFactory.getMetaServerMetricsSink.showMetrics(executorRemovedEvent)
+        }
 	}
 }

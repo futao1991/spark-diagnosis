@@ -46,10 +46,9 @@ object InternalStatusUtils {
 		}).getOrElse(Array[String]()).mkString(";")
 	}
 	
-	def getExecutorHost(executorId: String): String ={
+	def getExecutor(executorId: String): v1.ExecutorSummary ={
 		try {
-			val executor = appStatusStore.executorSummary(executorId)
-			StringUtils.substringBefore(executor.hostPort, ":")
+			appStatusStore.executorSummary(executorId)
 		} catch {
 			case _: Exception => null
 		}

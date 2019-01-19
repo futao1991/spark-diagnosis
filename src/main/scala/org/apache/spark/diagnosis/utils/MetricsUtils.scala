@@ -1,7 +1,7 @@
 package org.apache.spark.diagnosis.utils
 
 import java.text.DecimalFormat
-
+import java.util
 import org.apache.spark.SparkContext
 
 /**
@@ -53,7 +53,7 @@ object MetricsUtils {
 	}
 	
 	
-	def getSparkConfig(sparkContext: SparkContext): String ={
+	def getSparkConfig(sparkContext: SparkContext): util.Map[String, Any] ={
 		val conf = sparkContext.getConf
 		val driverMemory = conf.getSizeAsBytes("spark.driver.memory", "1073741824")
 		val executorMemory = conf.getSizeAsBytes("spark.executor.memory", "1073741824")
@@ -62,17 +62,18 @@ object MetricsUtils {
 		val maxDynamicExecutors = conf.getInt("spark.dynamicAllocation.maxExecutors", 5)
 		val executorInstances = conf.getInt("spark.executor.instances", 5)
 		val shufflePartitions = conf.getInt("spark.sql.shuffle.partitions", 200)
-		
-		var configInfo = Seq[String]("spark configuration:")
-		configInfo = configInfo :+ s"driverMemory: ${convertUnit(driverMemory)}"
-		configInfo = configInfo :+ s"executorMemory: ${convertUnit(executorMemory)}"
-		configInfo = configInfo :+ s"executorCores: $executorCores"
-		configInfo = configInfo :+ s"shufflePartitions: $shufflePartitions"
-		if (dynamicAllocationEnable) {
-			configInfo = configInfo :+ s"maxDynamicExecutors: $maxDynamicExecutors"
-		} else {
-			configInfo = configInfo :+ s"executorInstances: $executorInstances"
-		}
-		configInfo.mkString("\n")
+
+		val map = new util.HashMap[String, Any]()
+		map.put("driverMemory", driverMemory)
+		map.put("executorMemory", executorMemory)
+		map.put("executorCores", executorCores)
+		map.put("shufflePartitions", shufflePartitions)
+
+        if (dynamicAllocationEnable) {
+			map.put("maxDynamicExecutors", maxDynamicExecutors)
+        } else {
+			map.put("executorInstances", executorInstances)
+        }
+		map
 	}
 }
