@@ -74,6 +74,11 @@ class SparkAppListener extends SparkListener with Logging {
 		yarnClient.init(sparkContext.hadoopConfiguration)
 		yarnClient.start()
 
+		InternalStatusUtils.getAllExecutors.foreach(tuple =>{
+			println(s"executor ${tuple._1} running on ${tuple._2}")
+			StageMetricsData.executorMap(tuple._1) = tuple._2
+		})
+
         val applicationReport = yarnClient.getApplicationReport(ConverterUtils.toApplicationId(appId))
         val submitTime = applicationReport.getStartTime
         val user = applicationReport.getUser

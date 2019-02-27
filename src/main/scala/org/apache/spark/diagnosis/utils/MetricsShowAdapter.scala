@@ -3,6 +3,7 @@ package org.apache.spark.diagnosis.utils
 import java.sql.Timestamp
 import java.util
 
+import org.apache.commons.lang3.StringUtils
 import org.apache.spark.diagnosis.data.AppInfo
 
 /**
@@ -24,11 +25,13 @@ class StdOutMetricsShow extends MetricsSinkAdapter {
 class MetaServerMetrics(metaServerUrl: String) extends MetricsSinkAdapter {
 
     override def showMetrics(appInfo: AppInfo): Unit = {
-        val url = s"http://$metaServerUrl/metaserver/eventserver/v1/send"
-        val map = new util.HashMap[String, AnyRef]()
-        map.put("channel", s"CHANNEL@SPARK@${appInfo.event}")
-        map.put("event", appInfo.toJSONInfo)
-        HttpClient.sendPost(url, map)
+        if (StringUtils.isNotEmpty(metaServerUrl)) {
+            val url = s"http://$metaServerUrl/metaserver/eventserver/v1/send"
+            val map = new util.HashMap[String, AnyRef]()
+            map.put("channel", s"CHANNEL@SPARK@${appInfo.event}")
+            map.put("event", appInfo.toJSONInfo)
+            HttpClient.sendPost(url, map)
+        }
     }
 }
 

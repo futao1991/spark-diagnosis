@@ -1,6 +1,5 @@
 package org.apache.spark.diagnosis.status
 
-import org.apache.commons.lang3.StringUtils
 import org.apache.spark.SparkContext
 import org.apache.spark.status.AppStatusStore
 import org.apache.spark.status.api.v1
@@ -53,4 +52,10 @@ object InternalStatusUtils {
 			case _: Exception => null
 		}
 	}
+
+    def getAllExecutors: Seq[(String, String)] = {
+        appStatusStore.executorList(true)
+                .filter(sum => !"driver".equals(sum.id))
+                .map(sum => (sum.id, sum.hostPort))
+    }
 }
