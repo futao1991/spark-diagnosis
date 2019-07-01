@@ -15,15 +15,17 @@ object AppEvent {
     type Event = Event.Value
 }
 
-sealed abstract class AppInfo(appId: String, level: String, val event: AppEvent.Event) {
+sealed abstract class AppInfo(val appId: String, level: String, val event: AppEvent.Event) {
 
     def toJSONInfo: JSONObject = null
 
     def toConsoleInfo: String = null
+
+    def toGraphiteInfo: String = null
 }
 
 case class AppStartEvent(
-     appId: String,
+     override val appId: String,
      level: String,
      override val event: AppEvent.Event,
      submitTime: Long,
@@ -57,10 +59,25 @@ case class AppStartEvent(
         }
         seq.mkString("\n")
     }
+
+    override def toGraphiteInfo: String = {
+        val lines = new StringBuilder
+        val prefix = s"${appId}_$event"
+        val timestamp = System.currentTimeMillis() / 1000L
+        lines.append(s"${prefix}_submitTime").append(" ").append(submitTime)
+                .append(" ").append(timestamp).append("\n")
+        lines.append(s"${prefix}_startTime").append(" ")
+                .append(startTime).append(" ").append(timestamp).append("\n")
+        lines.append(s"${prefix}_user").append(" ")
+                .append(user).append(" ").append(timestamp).append("\n")
+        lines.append(s"${prefix}_queue").append(" ")
+                .append(queue).append(" ").append(timestamp).append("\n")
+        lines.toString()
+    }
 }
 
 case class AppEndEvent(
-     appId: String,
+     override val appId: String,
      level: String,
      override val event: AppEvent.Event,
      elapseTime: Long,
@@ -82,10 +99,23 @@ case class AppEndEvent(
            | memorySeconds: $memorySeconds, vCoreSeconds: $vCoreSeconds
          """.stripMargin
     }
+
+    override def toGraphiteInfo: String = {
+        val lines = new StringBuilder
+        val prefix = s"${appId}_$event"
+        val timestamp = System.currentTimeMillis() / 1000L
+        lines.append(s"${prefix}_elapseTime").append(" ").append(elapseTime)
+                .append(" ").append(timestamp).append("\n")
+        lines.append(s"${prefix}_memorySeconds").append(" ").append(memorySeconds)
+                .append(" ").append(timestamp).append("\n")
+        lines.append(s"${prefix}_vCoreSeconds").append(" ").append(vCoreSeconds)
+                .append(" ").append(timestamp).append("\n")
+        lines.toString()
+    }
 }
 
 case class StageCompletedEvent(
-     appId: String,
+     override val appId: String,
      level: String,
      override val event: AppEvent.Event,
      stageId: Int,
@@ -118,10 +148,27 @@ case class StageCompletedEvent(
            shuffleWrite: ${MetricsUtils.convertUnit(shuffleWriteBytes)},
          """.stripMargin
     }
+
+    override def toGraphiteInfo: String = {
+        val lines = new StringBuilder
+        val prefix = s"${appId}_${event}_stage$stageId"
+        val timestamp = System.currentTimeMillis() / 1000L
+        lines.append(s"${prefix}_totalTask").append(" ").append(totalTask)
+                .append(" ").append(timestamp).append("\n")
+        lines.append(s"${prefix}_inputBytes").append(" ").append(inputBytes)
+                .append(" ").append(timestamp).append("\n")
+        lines.append(s"${prefix}_outputBytes").append(" ").append(outputBytes)
+                .append(" ").append(timestamp).append("\n")
+        lines.append(s"${prefix}_shuffleReadBytes").append(" ").append(shuffleReadBytes)
+                .append(" ").append(timestamp).append("\n")
+        lines.append(s"${prefix}_shuffleWriteBytes").append(" ").append(shuffleWriteBytes)
+                .append(" ").append(timestamp).append("\n")
+        lines.toString()
+    }
 }
 
 case class TaskFailedEvent(
-     appId: String,
+     override val appId: String,
      level: String,
      override val event: AppEvent.Event,
      stageId: Int,
@@ -144,10 +191,21 @@ case class TaskFailedEvent(
         s"""$level: task $stageId.$taskId failed, reason: $failedReason, running on executor $executorId
          """.stripMargin
     }
+
+    override def toGraphiteInfo: String = {
+        val lines = new StringBuilder
+        val prefix = s"${appId}_${event}_stage${stageId}_$taskId"
+        val timestamp = System.currentTimeMillis() / 1000L
+        lines.append(s"${prefix}_executorId").append(" ").append(executorId)
+                .append(" ").append(timestamp).append("\n")
+        lines.append(s"${prefix}_failedReason").append(" ").append(failedReason)
+                .append(" ").append(timestamp).append("\n")
+        lines.toString()
+    }
 }
 
 case class ExecutorRemovedEvent(
-     appId: String,
+      override val appId: String,
      level: String,
      override val event: AppEvent.Event,
      executorId: String,
@@ -184,10 +242,33 @@ case class ExecutorRemovedEvent(
             max heap memory: ${MetricsUtils.convertUnit(maxHeapMemory)}
          """.stripMargin
     }
+
+    override def toGraphiteInfo: String = {
+        val lines = new StringBuilder
+        val prefix = s"${appId}_${event}_executor$executorId"
+        val timestamp = System.currentTimeMillis() / 1000L
+        lines.append(s"${prefix}_host").append(" ").append(host)
+                .append(" ").append(timestamp).append("\n")
+        lines.append(s"${prefix}_elapseTime").append(" ").append(elapseTime)
+                .append(" ").append(timestamp).append("\n")
+        lines.append(s"${prefix}_completedTasks").append(" ").append(completedTasks)
+                .append(" ").append(timestamp).append("\n")
+        lines.append(s"${prefix}_failedTask").append(" ").append(failedTask)
+                .append(" ").append(timestamp).append("\n")
+        lines.append(s"${prefix}_inputBytes").append(" ").append(inputBytes)
+                .append(" ").append(timestamp).append("\n")
+        lines.append(s"${prefix}_shuffleReadBytes").append(" ").append(shuffleReadBytes)
+                .append(" ").append(timestamp).append("\n")
+        lines.append(s"${prefix}_averageHeapMemory").append(" ").append(averageHeapMemory)
+                .append(" ").append(timestamp).append("\n")
+        lines.append(s"${prefix}_maxHeapMemory").append(" ").append(maxHeapMemory)
+                .append(" ").append(timestamp).append("\n")
+        lines.toString()
+    }
 }
 
 case class StageDiagnosisInfo(
-        appId: String,
+        override val appId: String,
         level: String,
         override val event: AppEvent.Event,
         diagnosisInfo: String) extends AppInfo(appId, level, event) {
@@ -197,7 +278,7 @@ case class StageDiagnosisInfo(
 }
 
 case class TaskDiagnosisInfo(
-       appId: String,
+       override val appId: String,
        level: String,
        override val event: AppEvent.Event,
        diagnosisInfo: String) extends AppInfo(appId, level, event) {
@@ -207,7 +288,7 @@ case class TaskDiagnosisInfo(
 }
 
 case class ExecutorMonitorInfo(
-        appId: String,
+        override val appId: String,
         level: String,
         override val event: AppEvent.Event,
         info: String) extends AppInfo(appId, level, event) {

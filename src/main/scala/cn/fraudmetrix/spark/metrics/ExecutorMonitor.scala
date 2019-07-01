@@ -1,6 +1,6 @@
 package cn.fraudmetrix.spark.metrics
 
-import java.util.concurrent.{Executors, TimeUnit}
+import java.util.concurrent.{Executors, ScheduledExecutorService, ThreadFactory, TimeUnit}
 
 import org.apache.commons.io.IOUtils
 import org.apache.commons.lang3.StringUtils
@@ -105,7 +105,7 @@ object ExecutorMonitor extends Logging {
 			if (heapMemory * 1.0 / executorMemory > 0.9) {
 				if (executorNotifyCount(executorId) == 0) {
 					val message = s"WARN: executor_$executorId max memory is ${MetricsUtils.convertUnit(executorMemory)}, current heap memory is ${MetricsUtils.convertUnit(heapMemory)}"
-					MetricsSinkFactory.getLogMetricsSink.showMetrics(
+					MetricsSinkFactory.printLog(
 						ExecutorMonitorInfo("", "WARN", AppEvent.Event.EXECUTOR_INFO, message)
 					)
 				}
@@ -129,8 +129,17 @@ object ExecutorMonitor extends Logging {
 		}
 	}
 	
-	def startMonitor(): Unit ={
-		val executor = Executors.newScheduledThreadPool(1)
+	def startMonitor(): Unit = {
+
+		val executor = Executors.newSingleThreadScheduledExecutor(new ThreadFactory {
+			override def newThread(r: Runnable): Thread = {
+				val t = new Thread(r, "monitor")
+				t.setDaemon(true)
+				if (t.getPriority != Thread.NORM_PRIORITY) t.setPriority(Thread.NORM_PRIORITY)
+				t
+			}
+		})
+
 		executor.scheduleAtFixedRate(new Runnable {
 			override def run(): Unit = {
 				try {

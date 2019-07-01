@@ -1,17 +1,24 @@
 package org.apache.spark.diagnosis.utils
 
+import java.io.OutputStreamWriter
+import java.net.Socket
 import java.sql.Timestamp
 import java.util
 
 import org.apache.commons.lang3.StringUtils
+import org.apache.hadoop.io.IOUtils
 import org.apache.spark.diagnosis.data.AppInfo
+import org.slf4j.LoggerFactory
 
 /**
   * @author futao
   * create at 2018/9/10
   */
 trait MetricsSinkAdapter {
+
 	def showMetrics(appInfo: AppInfo)
+
+    def close()
 }
 
 class StdOutMetricsShow extends MetricsSinkAdapter {
@@ -20,6 +27,10 @@ class StdOutMetricsShow extends MetricsSinkAdapter {
         val time = new Timestamp(System.currentTimeMillis)
         println(s"$time ${appInfo.toConsoleInfo}")
 	}
+
+    override def close(): Unit = {
+
+    }
 }
 
 class MetaServerMetrics(metaServerUrl: String) extends MetricsSinkAdapter {
@@ -33,27 +44,98 @@ class MetaServerMetrics(metaServerUrl: String) extends MetricsSinkAdapter {
             HttpClient.sendPost(url, map)
         }
     }
+
+    override def close(): Unit = {
+
+    }
 }
+
+class GraphiteMetrics(host:String, port:Int) extends MetricsSinkAdapter {
+
+    private val logger = LoggerFactory.getLogger(this.getClass)
+
+    private val socket = new Socket(host, port)
+
+    private val writer = new OutputStreamWriter(socket.getOutputStream)
+
+    override def showMetrics(appInfo: AppInfo): Unit = {
+        try {
+            if (null != appInfo.toGraphiteInfo) {
+                writer.write(appInfo.toGraphiteInfo)
+                writer.flush()
+            }
+        } catch {
+            case e: Exception =>
+                logger.error(s"send message to graphite error", e)
+        }
+    }
+
+    override def close(): Unit = {
+        IOUtils.closeStream(writer)
+    }
+}
+
 
 object MetricsSinkFactory {
 
+    private val logger = LoggerFactory.getLogger(this.getClass)
+
     var metaServerUrl: String = _
+
+    var graphiteHost: String = _
+
+    var graphitePort: Int = 0
 
 	var logMetricsSink: MetricsSinkAdapter = _
 
-    var metaServerMetricsSink: MetricsSinkAdapter = _
+    var sinkType: String = _
 
-    def getLogMetricsSink: MetricsSinkAdapter = {
-        if (null == logMetricsSink) {
-            logMetricsSink = new StdOutMetricsShow
+    var metricsSink: MetricsSinkAdapter = _
+
+    def initSink(): Unit = {
+        logMetricsSink = new StdOutMetricsShow
+
+        metricsSink = if ("metaServer".equalsIgnoreCase(sinkType)) {
+            if (StringUtils.isEmpty(metaServerUrl)) {
+                logger.error("meta server url is empty!")
+                null
+            } else {
+                new MetaServerMetrics(metaServerUrl)
+            }
+        } else if ("graphite".equalsIgnoreCase(sinkType)) {
+            if (StringUtils.isEmpty(graphiteHost) || graphitePort <= 0) {
+                logger.error("graphite host or port is empty!")
+                null
+            } else {
+                try {
+                    new GraphiteMetrics(graphiteHost, graphitePort)
+                } catch {
+                    case e: Exception =>
+                        logger.error("init graphite sink error", e)
+                        null
+                }
+            }
+        } else {
+            null
         }
-        logMetricsSink
     }
 
-    def getMetaServerMetricsSink: MetricsSinkAdapter = {
-        if (null == metaServerMetricsSink) {
-            metaServerMetricsSink = new MetaServerMetrics(metaServerUrl)
+    def showMetrics(appInfo: AppInfo): Unit = {
+        if (null != metricsSink) {
+            metricsSink.showMetrics(appInfo)
         }
-        metaServerMetricsSink
     }
+
+    def close(): Unit = {
+        if (null != metricsSink) {
+            metricsSink.close()
+        }
+    }
+
+    def printLog(appInfo: AppInfo): Unit = {
+        if (null != logMetricsSink) {
+            logMetricsSink.showMetrics(appInfo)
+        }
+    }
+
 }

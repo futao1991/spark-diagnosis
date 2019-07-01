@@ -48,8 +48,15 @@ class SparkAppListener extends SparkListener with Logging {
 		if (sparkContext == null || InternalStatusUtils.getAppStatusStore(sparkContext) == null) {
 			throw new RuntimeException("can not get appStatusStore of sparkContext")
 		}
+
+		//spark metrics config
 		StageHeuristic.prometheusUrl = sparkContext.getConf.get("spark.diagnosis.prometheus.url", "")
         MetricsSinkFactory.metaServerUrl = sparkContext.getConf.get("spark.diagnosis.metaServer.url", "")
+		MetricsSinkFactory.graphiteHost = sparkContext.getConf.get("spark.diagnosis.graphite.host", "")
+		MetricsSinkFactory.graphitePort = sparkContext.getConf.getInt("spark.diagnosis.graphite.port", 0)
+		MetricsSinkFactory.sinkType = sparkContext.getConf.get("spark.diagnosis.sink.type", "metaServer")
+		MetricsSinkFactory.initSink()
+
 		JobGroupScheduleFactory.addMonitor(applicationStart.appId)
 		applicationStart.appId.foreach(appId = _)
 		startTime = System.currentTimeMillis()
@@ -57,14 +64,14 @@ class SparkAppListener extends SparkListener with Logging {
 		ExecutorMonitor.conf = sparkContext.hadoopConfiguration
 		ExecutorMonitor.executorMemory = sparkContext.getConf.getSizeAsBytes("spark.executor.memory", "1073741824")
 		val appIdPath = sparkContext.getConf.get("spark.diagnosis.jvm.path", "")
+		ExecutorMonitor.startMonitor()
 		if (StringUtils.isNotEmpty(appIdPath)) {
 			try {
 				val path = s"$appIdPath/$appId"
+                ExecutorMonitor.appIdPath = path
 				val fs = FileSystem.get(sparkContext.hadoopConfiguration)
 				fs.mkdirs(new Path(path), new FsPermission("777"))
 				fs.setPermission(new Path(path), new FsPermission("777"))
-				ExecutorMonitor.appIdPath = path
-				ExecutorMonitor.startMonitor()
 			} catch {
 				case e:Exception => logError(s"create path $appIdPath/$appId error: ${e.getMessage}")
 			}
@@ -86,8 +93,8 @@ class SparkAppListener extends SparkListener with Logging {
 
         val appStartEvent = AppStartEvent(appId, "INFO", AppEvent.Event.APP_START,
             submitTime, startTime, user, queue, sparkConfig)
-        MetricsSinkFactory.getLogMetricsSink.showMetrics(appStartEvent)
-		MetricsSinkFactory.getMetaServerMetricsSink.showMetrics(appStartEvent)
+        MetricsSinkFactory.printLog(appStartEvent)
+		MetricsSinkFactory.showMetrics(appStartEvent)
 	}
 
 	override def onApplicationEnd(applicationEnd: SparkListenerApplicationEnd): Unit = {
@@ -99,16 +106,17 @@ class SparkAppListener extends SparkListener with Logging {
 			val time = System.currentTimeMillis() - startTime
 
             val appEndEvent = AppEndEvent(appId, "INFO", AppEvent.Event.APP_END, time, memorySeconds, vCoreSeconds)
-            MetricsSinkFactory.getLogMetricsSink.showMetrics(appEndEvent)
-            MetricsSinkFactory.getMetaServerMetricsSink.showMetrics(appEndEvent)
+            MetricsSinkFactory.printLog(appEndEvent)
+            MetricsSinkFactory.showMetrics(appEndEvent)
 
             for (executorId <- StageMetricsData.executorMap.keySet) {
                 val executorRemovedEvent = getExecutorEvent(executorId)
                 if (null != executorRemovedEvent) {
-                    MetricsSinkFactory.getLogMetricsSink.showMetrics(executorRemovedEvent)
-                    MetricsSinkFactory.getMetaServerMetricsSink.showMetrics(executorRemovedEvent)
+                    MetricsSinkFactory.printLog(executorRemovedEvent)
+                    MetricsSinkFactory.showMetrics(executorRemovedEvent)
                 }
             }
+			MetricsSinkFactory.close()
 		}
 	}
 
@@ -145,8 +153,8 @@ class SparkAppListener extends SparkListener with Logging {
                 val stageCompletedEvent = StageCompletedEvent(appId, "INFO", AppEvent.Event.STAGE_COMPLETED, stageId, time,
                     taskNums, inputBytes, outputBytes, shuffleReadBytes, shuffleWriteBytes)
 
-                MetricsSinkFactory.getLogMetricsSink.showMetrics(stageCompletedEvent)
-                MetricsSinkFactory.getMetaServerMetricsSink.showMetrics(stageCompletedEvent)
+                MetricsSinkFactory.printLog(stageCompletedEvent)
+                MetricsSinkFactory.showMetrics(stageCompletedEvent)
 			}
 		}
 	}
@@ -201,8 +209,8 @@ class SparkAppListener extends SparkListener with Logging {
 
         val executorRemovedEvent = getExecutorEvent(executorId)
         if (null != executorRemovedEvent) {
-            MetricsSinkFactory.getLogMetricsSink.showMetrics(executorRemovedEvent)
-            MetricsSinkFactory.getMetaServerMetricsSink.showMetrics(executorRemovedEvent)
+            MetricsSinkFactory.printLog(executorRemovedEvent)
+            MetricsSinkFactory.showMetrics(executorRemovedEvent)
         }
 	}
 }

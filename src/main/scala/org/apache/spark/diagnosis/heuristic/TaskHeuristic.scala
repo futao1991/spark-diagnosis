@@ -23,8 +23,8 @@ object TaskHeuristic extends Logging {
 			logError(s"task_$taskId failed, reason: ${reason.toErrorString}, running on executor $executorId")
 
             val taskFailedEvent = TaskFailedEvent(appId, "ERROR", AppEvent.Event.TASK_FAILED, stageId, taskId, executorId, reason.toErrorString)
-            MetricsSinkFactory.getLogMetricsSink.showMetrics(taskFailedEvent)
-            MetricsSinkFactory.getMetaServerMetricsSink.showMetrics(taskFailedEvent)
+            MetricsSinkFactory.printLog(taskFailedEvent)
+            MetricsSinkFactory.showMetrics(taskFailedEvent)
 
             checkPossibleReason(taskId, reason.toErrorString, executorId)
 		}
@@ -37,7 +37,7 @@ object TaskHeuristic extends Logging {
 				s"""executor $executorId failed due to OOM, possible reasons:
 				   |1) data skew 2)executor memory too low 3)reading too large data\n $reason
 				 """.stripMargin
-			MetricsSinkFactory.getLogMetricsSink.showMetrics(
+			MetricsSinkFactory.printLog(
                 TaskDiagnosisInfo("", "ERROR", AppEvent.Event.TASK_DIAGNOSIS, message)
             )
 		} else {
@@ -46,7 +46,7 @@ object TaskHeuristic extends Logging {
 			if (StringUtils.isNotEmpty(reasonDiagnosis)) {
 				reasonInfo += reasonDiagnosis
 			}
-			MetricsSinkFactory.getLogMetricsSink.showMetrics(
+			MetricsSinkFactory.printLog(
                 TaskDiagnosisInfo("", "ERROR", AppEvent.Event.TASK_DIAGNOSIS, reasonInfo)
             )
 		}

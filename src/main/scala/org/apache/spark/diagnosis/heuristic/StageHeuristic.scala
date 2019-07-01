@@ -181,7 +181,7 @@ object StageHeuristic extends Logging {
 				needToCheckPrometheus = true
 				val message = s"longTail task occurred in stage $stageId ($stageName), max time: $maxTime ms, taskId: $maxTimeTaskId"
 				if (HeuristicConf.LongTailTaskNotifyCount == 0) {
-					MetricsSinkFactory.getLogMetricsSink.showMetrics(
+					MetricsSinkFactory.printLog(
                         StageDiagnosisInfo("", "WARN", AppEvent.Event.STAGE_DIAGNOSIS, message)
                     )
 				}
@@ -215,7 +215,7 @@ object StageHeuristic extends Logging {
 				}
 				if (HeuristicConf.DataSkewNotifyCount == 0) {
 					StageMetricsData.stageSkewFlag(stageId) = message
-					MetricsSinkFactory.getLogMetricsSink.showMetrics(
+					MetricsSinkFactory.printLog(
 						StageDiagnosisInfo("", "WARN", AppEvent.Event.STAGE_DIAGNOSIS, message))
 				}
 				HeuristicConf.DataSkewNotifyCount += 1
@@ -247,7 +247,7 @@ object StageHeuristic extends Logging {
 					message = s"$message, site: ${rddInfo.get.callSite}"
 				}
 				if (HeuristicConf.DataSkewNotifyCount == 0) {
-					MetricsSinkFactory.getLogMetricsSink.showMetrics(
+					MetricsSinkFactory.printLog(
                         StageDiagnosisInfo("", "WARN", AppEvent.Event.STAGE_DIAGNOSIS, message)
                     )
 				}
@@ -274,7 +274,7 @@ object StageHeuristic extends Logging {
 				val message = s"input skew occurred in stage $stageId ($stageName), max input records: $maxInputRecord, taskId: $maxInputRecordTaskId"
 				if (HeuristicConf.DataSkewNotifyCount == 0) {
 					StageMetricsData.stageSkewFlag(stageId) = message
-					MetricsSinkFactory.getLogMetricsSink.showMetrics(
+					MetricsSinkFactory.printLog(
                         StageDiagnosisInfo("", "WARN", AppEvent.Event.STAGE_DIAGNOSIS, message)
                     )
 				}
@@ -294,7 +294,7 @@ object StageHeuristic extends Logging {
 				}
 
 				if (HeuristicConf.GcOverHeadNotifyCount == 0) {
-					MetricsSinkFactory.getLogMetricsSink.showMetrics(
+					MetricsSinkFactory.printLog(
                         StageDiagnosisInfo("", "WARN", AppEvent.Event.STAGE_DIAGNOSIS, message)
                     )
 				}
@@ -317,7 +317,7 @@ object StageHeuristic extends Logging {
 						   | Load 1m: ${loadAverage._1}, Load 5m: ${loadAverage._2}, Load 15m: ${loadAverage._3}
 						   | CPU usage: $cpuUsage
 						 """.stripMargin
-					MetricsSinkFactory.getLogMetricsSink.showMetrics(
+					MetricsSinkFactory.printLog(
                         StageDiagnosisInfo("", "INFO", AppEvent.Event.STAGE_DIAGNOSIS, message)
                     )
 				}
@@ -339,7 +339,7 @@ object StageHeuristic extends Logging {
 				val medianTime = distributions.executorRunTime(2)
 				val medianDelay = distributions.schedulerDelay(2)
 				val message = s"stage $stageId average task time: $medianTime ms, average delay $medianDelay ms"
-				MetricsSinkFactory.getLogMetricsSink.showMetrics(
+				MetricsSinkFactory.printLog(
                     StageDiagnosisInfo("", "WARN", AppEvent.Event.STAGE_DIAGNOSIS, message)
                 )
 			}
@@ -356,7 +356,7 @@ object StageHeuristic extends Logging {
 		if (parentShuffleWritten > 0) {
 			val taskNums = stageInfo.numTasks
 			val message = s"stage $stageId ($stageName) prepare to shuffle read ${MetricsUtils.convertUnit(parentShuffleWritten)}, total tasks: $taskNums"
-			MetricsSinkFactory.getLogMetricsSink.showMetrics(
+			MetricsSinkFactory.printLog(
                 StageDiagnosisInfo("", "INFO", AppEvent.Event.STAGE_DIAGNOSIS, message)
             )
 		}
